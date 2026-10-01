@@ -1,0 +1,15 @@
+ScanCode 32.5.0 -clpi, 27 files, 2026-09-29
+cost-savers/DATA-AND-SHARDS.md: licences ['CC-BY-4.0'] copyrights []
+cost-savers/LICENSE-NONCOMMERCIAL.md: licences ['PolyForm-Noncommercial-1.0.0'] copyrights ['Copyright 2026 Juan Carlos De Santiago', 'Copyright Yoyodyne, Inc. (http://example.com)']
+cost-savers/LICENSE.md: licences ['PolyForm-Small-Business-1.0.0'] copyrights ['Copyright 2026 Juan Carlos De Santiago', 'Copyright Yoyodyne, Inc. (http://example.com)']
+cost-savers/LICENSING.md: licences ['CC-BY-4.0', 'PolyForm-Small-Business-1.0.0 AND PolyForm-Noncommercial-1.0.0'] copyrights []
+cost-savers/PROVENANCE.md: licences ['PolyForm-Small-Business-1.0.0 AND PolyForm-Noncommercial-1.0.0'] copyrights []
+cost-savers/README.md: licences ['PolyForm-Small-Business-1.0.0 AND PolyForm-Noncommercial-1.0.0'] copyrights []
+cost-savers/SHARD-FORMAT.md: licences ['CC-BY-4.0', 'CC-BY-4.0 AND CC0-1.0'] copyrights []
+cost-savers/TECHNICAL-DISCLOSURE.md: licences ['PolyForm-Small-Business-1.0.0 AND PolyForm-Noncommercial-1.0.0'] copyrights []
+
+No licence or copyright detections in any source file (plugins/, bin/, tests/); detections above are the licence texts and documentation that name licences.
+gitleaks 8.24.0 (detect --no-git -s . --redact): no leaks found
+Home-directory paths of the development machine (grep -rn over the tree): 0
+Vendored third-party binaries/sources: none (opencode.db, session logs, backups excluded; see PROVENANCE.md)
+make test (clean tree, 2026-09-29): node:test 6 passed, pytest 1 passed (7/7 passed)

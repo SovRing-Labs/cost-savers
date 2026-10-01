@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "cost-savers: token compression, context trimming, and payload sanitization for agent harnesses"
+version: 0.1.0
+abstract: "A suite of high-efficiency agent harness plugins and token telemetry tools: context trimming, radical blank/noise compaction, minimal system prompts, PII/secret scrubbing, request pacing, and early context gating. Measured to reduce cloud token load by over 60% on real-world long-turn sessions. Published as prior art."
+authors:
+  - family-names: "De Santiago"
+    given-names: "Juan Carlos"
+license:
+  - PolyForm-Small-Business-1.0.0
+  - PolyForm-Noncommercial-1.0.0
+keywords: [LLM agents, token optimization, context trimming, prompt compression, cost savings, opencode]

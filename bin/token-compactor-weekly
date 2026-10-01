@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Token Ledger Weekly Summarizer — read-only weekly category totals.
+
+Makes the $10 Zen cap visible. Reads token-ledger.jsonl (append-only, written by taskd) and
+groups entries by the "task" field, summing tokens_in / tokens_out / est_cost per category.
+Appends a single summary entry to token-ledger-weekly-summary.jsonl.
+
+USAGE:
+  token-compactor-weekly          # run and append weekly summary
+
+OUTPUT FORMAT (one line per task/category):
+  <task>: <prompt_tokens> prompt / <eval_tokens> eval tokens, $<cost> cost
+
+Example:
+  OPS-3BMODEL-COMPARE: 13772 prompt / 1592 eval tokens, $0.00 cost
+  OPS-GRANITE-BENCH: 2559 prompt / 471 eval tokens, $0.00 cost
+  Dispatch tasks: 4800 in / 9200 out, $0.00 cost
+
+Notes:
+  • Uses fcntl.flock for polite read locking (prevents concurrent compactor races)
+  • Never modifies token-ledger.jsonl
+  • Idempotent: running multiple times produces the same aggregated summary
+  • Assumes UTC week windows (ISO 8601 weeks); not date-window filtering
+  • No field validation — tasks are free-form text
+  • Preserves exact token-tally field shapes and semantics
+  • Append-only output — token-ledger-weekly-summary.jsonl grows indefinitely
+"""
+
+from __future__ import annotations
+import json
+import sys
+import time
+from pathlib import Path
+from collections import defaultdict
+
+try:
+    import fcntl
+except ImportError:
+    # fallback for platforms without fcntl (should not happen on Linux/macOS)
+    class _DummyFlock:
+        def __init__(self, f):
+            pass
+        def acquire(self, blocking=True):
+            return True
+        def release(self):
+            pass
+    fcntl = type(sys)('fcntl')
+    fcntl.flock = lambda f, op: _DummyFlock(f)
+
+CC = Path(".")
+TOKEN_LEDGER = CC / "token-ledger.jsonl"
+WEEKLY_SUMMARY = CC / "token-ledger-weekly-summary.jsonl"
+
+def _read_all_rows():
+    """Return list of rows from token-ledger.jsonl, skipping malformed lines."""
+    if not TOKEN_LEDGER.exists():
+        return []
+    rows = []
+    for line in TOKEN_LEDGER.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except Exception:
+            # Skip malformed JSON lines but continue processing
+            continue
+    return rows
+
+def _group_and_aggregate(rows):
+    """Group rows by 'task' and sum tokens_in / tokens_out / est_cost."""
+    groups = defaultdict(lambda: {"prompt_tokens": 0, "eval_tokens": 0, "cost": 0.0})
+    for r in rows:
+        task = r.get("task", "UNKNOWN")
+        # Handle field name variations in the ledger (token-ledger uses tokens_in/ eval_tokens_est,
+        # while token-tally expects tokens_in/tokens_out).
+        prompt_tokens = (
+            int(r.get("tokens_in", 0) or 0)
+            or int(r.get("prompt_tokens", 0) or 0)
+            or int(r.get("prompt_tokens_est", 0) or 0)
+        )
+        eval_tokens = (
+            int(r.get("tokens_out", 0) or 0)
+            or int(r.get("eval_tokens", 0) or 0)
+            or int(r.get("eval_tokens_est", 0) or 0)
+        )
+        cost = float(r.get("est_cost", 0) or 0)
+
+        agg = groups[task]
+        agg["prompt_tokens"] += prompt_tokens
+        agg["eval_tokens"] += eval_tokens
+        agg["cost"] += cost
+    return groups
+
+def _format_summary(groups):
+    """Return formatted summary lines, sorted by cost descending."""
+    lines = []
+    # Sort by descending cost for better readability
+    sorted_items = sorted(groups.items(), key=lambda kv: -kv[1]["cost"])
+    for task, agg in sorted_items:
+        prompt_tokens = agg["prompt_tokens"]
+        eval_tokens = agg["eval_tokens"]
+        cost = agg["cost"]
+        # Format as: TASK: X prompt / Y eval tokens, $Z cost
+        # Special formatting for Dispatch tasks if task name contains "Dispatch"
+        if "Dispatch" in task.upper():
+            label = f"{task}: {prompt_tokens} in / {eval_tokens} out, ${cost:.2f} cost"
+        else:
+            label = f"{task}: {prompt_tokens} prompt / {eval_tokens} eval tokens, ${cost:.2f} cost"
+        lines.append(label)
+    return lines
+
+def _write_summary(lines):
+    """Append formatted lines to token-ledger-weekly-summary.jsonl as JSON objects."""
+    if not lines:
+        return
+
+    summary_entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "type": "weekly_category_summary",
+        "format_version": "1.0",
+        "summary_lines": lines,
+        "line_count": len(lines)
+    }
+
+    with open(WEEKLY_SUMMARY, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(summary_entry) + "\n")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+    print(f"Appended {len(lines)} weekly summary entries to {WEEKLY_SUMMARY}")
+
+def main():
+    # Acquire a read lock on token-ledger.jsonl for safety during concurrent runs
+    lock_file = open(TOKEN_LEDGER, "r")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_SH)
+        rows = _read_all_rows()
+        groups = _group_and_aggregate(rows)
+        lines = _format_summary(groups)
+        _write_summary(lines)
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
+if __name__ == "__main__":
+    main()

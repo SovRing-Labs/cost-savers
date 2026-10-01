@@ -1,0 +1,18 @@
+[
+ {"id": "Q01", "prompt": "In this repository, what is the default timeout in seconds for a bash operation in bin/fleet-exec (DEFAULT_TIMEOUT_S)?", "expect": "30"},
+ {"id": "Q02", "prompt": "In bin/fleet_sql.py, what is the value of EXPLICIT_LIMIT_MAX?", "expect": "200"},
+ {"id": "Q03", "prompt": "In bin/fleet_sql.py, what is the schema cache TTL in seconds (_SCHEMA_TTL)?", "expect": "300"},
+ {"id": "Q04", "prompt": "In bin/fleet_retry_engine.py, what is the default max_delay?", "expect": "60"},
+ {"id": "Q05", "prompt": "According to README.md, on which localhost port does the omnitool intent daemon serve?", "expect": "8498"},
+ {"id": "Q06", "prompt": "According to README.md, which environment variable sets the directories that write/patch operations may touch?", "expect": "FLEET_EXEC_WRITE_SCOPES"},
+ {"id": "Q07", "prompt": "According to README.md, what is the default path of the circuit-breaker database (OMNIBREAK_DB)?", "expect": "omnibreak.db"},
+ {"id": "Q08", "prompt": "What two MCP tool names does the server in mcp/ expose? Name both.", "expect": "fleet_exec_validate"},
+ {"id": "Q09", "prompt": "How many guard selftest cases does TECHNICAL-DISCLOSURE.md report as passing?", "expect": "59"},
+ {"id": "Q10", "prompt": "Which file holds the JSON Schema of the payload, according to README.md? Give its path.", "expect": "omnitool_operations.json"},
+ {"id": "Q11", "prompt": "In bin/fleet_sql.py, what SQLite busy_timeout (milliseconds) is set on connections?", "expect": "5000"},
+ {"id": "Q12", "prompt": "According to TECHNICAL-DISCLOSURE.md, what is the guard cost per op check in microseconds?", "expect": "48"},
+ {"id": "Q13", "prompt": "What CLI flag of bin/fleet-exec checks a payload's structure without running anything?", "expect": "--validate-only"},
+ {"id": "Q14", "prompt": "According to TECHNICAL-DISCLOSURE.md, how many of 10 malformed shapes does preflight repair?", "expect": "8"},
+ {"id": "Q15", "prompt": "In bin/fleet_sql.py, what is _TOKEN_LIMIT_PER_HOUR?", "expect": "10000"},
+ {"id": "Q16", "prompt": "According to README.md, which environment variable, set to off, skips the advisory classifier?", "expect": "FLEET_EXEC_CLASSIFIER"}
+]

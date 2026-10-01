@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""fleet-token-baseline — cloud tokens (and cost) per task advanced.
+
+The KPI for the wiring work: every improvement (state compression, reflex
+offload, fewer failed dispatches) should push tokens-per-task DOWN. Baseline
+it before changing anything, or you cannot prove any of it worked.
+
+Joins dispatch.db (task -> session) to opencode.db (session -> token counts).
+Read-only. No network. Run it anywhere.
+"""
+import json, sqlite3, sys, argparse
+from pathlib import Path
+
+DISPATCH = Path(".") / "dispatch.db"
+OPENCODE = Path(".") / "opencode.db"
+
+
+def load_session_tokens(days):
+    """session_id -> {tokens, cost, messages} from opencode message payloads."""
+    con = sqlite3.connect(f"file:{OPENCODE}?mode=ro", uri=True)
+    cutoff_ms = 0
+    if days:
+        cutoff_ms = int((int(con.execute("SELECT strftime('%s','now')").fetchone()[0])
+                         - days * 86400) * 1000)
+    out = {}
+    q = "SELECT session_id, data FROM message"
+    params = ()
+    if cutoff_ms:
+        q += " WHERE time_created > ?"
+        params = (cutoff_ms,)
+    for sid, data in con.execute(q, params):
+        try:
+            d = json.loads(data)
+        except Exception:
+            continue
+        tk = d.get("tokens") or {}
+        if not isinstance(tk, dict):
+            continue
+        e = out.setdefault(sid, {"tokens": 0, "cost": 0.0, "messages": 0})
+        # 'total' already includes input+output+reasoning for this provider
+        e["tokens"] += int(tk.get("total") or 0)
+        e["cost"] += float(d.get("cost") or 0)
+        e["messages"] += 1
+    con.close()
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--days", type=int, default=30, help="window (0 = all time)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+
+    sess = load_session_tokens(a.days)
+    con = sqlite3.connect(f"file:{DISPATCH}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+
+    where = ""
+    params = []
+    if a.days:
+        where = "WHERE d.dispatched_at > strftime('%s','now',?)"
+        params = [f"-{a.days} days"]
+
+    rows = con.execute(f"""
+        SELECT d.task_id, d.session, d.state, t.status
+          FROM dispatches d JOIN tasks t ON t.id = d.task_id
+          {where}
+    """, params).fetchall()
+
+    tasks, tok_by_task, attempts, wasted = {}, {}, {}, 0
+    for r in rows:
+        tid = r["task_id"]
+        tasks[tid] = r["status"]
+        attempts[tid] = attempts.get(tid, 0) + 1
+        if r["state"] in ("gaveup", "rate_limited"):
+            wasted += 1
+        s = sess.get(r["session"] or "")
+        if s:
+            tok_by_task[tid] = tok_by_task.get(tid, 0) + s["tokens"]
+
+    done = [t for t, st in tasks.items() if st == "done"]
+    total_tok = sum(tok_by_task.values())
+    done_tok = sum(tok_by_task.get(t, 0) for t in done)
+    n_disp = len(rows)
+
+    res = {
+        "window_days": a.days or "all",
+        "tasks_touched": len(tasks),
+        "tasks_done": len(done),
+        "dispatches": n_disp,
+        "wasted_dispatches": wasted,
+        "attempts_per_task": round(n_disp / len(tasks), 2) if tasks else 0,
+        "tokens_total": total_tok,
+        "tokens_per_task_done": round(done_tok / len(done)) if done else None,
+        "tokens_per_dispatch": round(total_tok / n_disp) if n_disp else None,
+        "sessions_matched": sum(1 for r in rows if (r["session"] or "") in sess),
+        "sessions_unmatched": sum(1 for r in rows if (r["session"] or "") not in sess),
+    }
+
+    if a.json:
+        print(json.dumps(res, indent=2))
+        return 0
+
+    print(f"=== FLEET TOKEN BASELINE — last {res['window_days']} days ===\n")
+    print(f"  tasks touched            {res['tasks_touched']}")
+    print(f"  tasks done               {res['tasks_done']}")
+    print(f"  dispatches               {res['dispatches']}")
+    print(f"  wasted (gaveup/rl)       {res['wasted_dispatches']}"
+          f"  ({100*wasted/n_disp:.0f}%)" if n_disp else "")
+    print(f"  attempts per task        {res['attempts_per_task']}")
+    print()
+    print(f"  tokens total             {res['tokens_total']:,}")
+    print(f"  TOKENS PER TASK DONE     {res['tokens_per_task_done']:,}" 
+          if res['tokens_per_task_done'] else "  TOKENS PER TASK DONE     n/a")
+    print(f"  tokens per dispatch      {res['tokens_per_dispatch']:,}"
+          if res['tokens_per_dispatch'] else "  tokens per dispatch      n/a")
+    print()
+    print(f"  session match rate       {res['sessions_matched']}/{n_disp}"
+          f" ({100*res['sessions_matched']/n_disp:.0f}%)" if n_disp else "")
+    if res["sessions_unmatched"]:
+        print(f"  NOTE: {res['sessions_unmatched']} dispatches had no matching opencode")
+        print( "        session (purged, or ran on a non-opencode lane). The")
+        print( "        tokens figure is a LOWER BOUND.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

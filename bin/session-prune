@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""session-prune — clean up dead/idle opencode worker & probe sessions that
+accumulate (each `opencode run` leaves a session; nothing prunes them → 100+
+pile up → "N idlers" clutter). CONSERVATIVE: only prunes sessions that are
+clearly disposable spawns, never J's named chats. Dry-run by default.
+
+  session-prune            # DRY RUN — show what WOULD be pruned
+  session-prune --apply    # actually delete (irreversible)
+
+Prunes a session ONLY if ALL of these are true:
+  1. Title matches a disposable pattern:
+     - "New session - ..."  (untitled worker/probe spawns — the T41 naming gap)
+     - exactly "OK"         (token-test probes)
+  2. Session has cost == 0 (preserves cost/token history for accounting)
+  3. Session was last updated > GRACE_PERIOD_MINUTES ago (default 10 min)
+     — this protects in-process sessions that are actively working
+  4. Session is NOT a parent of active sub-sessions (protects session trees)
+
+Everything else (named chats, task-titled workers, the tracker, live sessions)
+is LEFT ALONE.
+"""
+from __future__ import annotations
+from pathlib import Path
+import sys, json, re, urllib.request, subprocess, time
+
+BASE = "http://127.0.0.1:4096"
+GRACE_PERIOD_MINUTES = 10  # Don't prune sessions updated within this window
+
+def _costly_ids():
+    """Session ids with cost>0 — NEVER prune these (preserves cost/token history for
+    the token-waste chew + accounting). Prune eating cost data was caught 2026-08-27."""
+    import sqlite3
+    try:
+        c = sqlite3.connect("file:%s?mode=ro" % ("opencode.db"), uri=True)
+        return {r[0] for r in c.execute("SELECT id FROM session WHERE cost > 0").fetchall()}
+    except Exception:
+        return set()
+
+
+def _active_dispatch_pids():
+    """Get PIDs of currently active dispatches from dispatch.db."""
+    import sqlite3
+    dispatch_db = Path(".") / "dispatch.db"
+    if not dispatch_db.exists():
+        return set()
+    try:
+        c = sqlite3.connect(f"file:{dispatch_db}?mode=ro", uri=True)
+        rows = c.execute("""
+            SELECT pid FROM dispatches 
+            WHERE state IN ('dispatched', 'running') AND pid IS NOT NULL AND pid > 0
+        """).fetchall()
+        c.close()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+
+DISPOSABLE = [re.compile(r"^New session - "), re.compile(r"^OK$")]
+
+
+def _get(path):
+    return json.loads(urllib.request.urlopen(BASE + path, timeout=10).read())
+
+
+def _is_session_active(sid, sessions_by_id, active_pids, now_ts):
+    """Check if a session is likely active (recently updated or parent of active sub-session)."""
+    s = sessions_by_id.get(sid)
+    if not s:
+        return False
+    
+    # Check if updated recently (within grace period)
+    updated = s.get("time", {}).get("updated", 0)
+    if updated and (now_ts * 1000 - updated) < GRACE_PERIOD_MINUTES * 60 * 1000:
+        return True
+    
+    # Check if this session is a parent of any recently updated session
+    for other in sessions_by_id.values():
+        if other.get("parentID") == sid:
+            other_updated = other.get("time", {}).get("updated", 0)
+            if other_updated and (now_ts * 1000 - other_updated) < GRACE_PERIOD_MINUTES * 60 * 1000:
+                return True
+    
+    return False
+
+
+def main():
+    apply = "--apply" in sys.argv
+    sessions = _get("/session")
+    costly = _costly_ids()
+    active_pids = _active_dispatch_pids()
+    now_ts = time.time()
+    
+    # Build lookup for parent-child session relationships
+    sessions_by_id = {s.get("id"): s for s in sessions}
+    
+    prunable = []
+    for s in sessions:
+        sid = s.get("id")
+        if not sid:
+            continue
+            
+        if sid in costly:
+            continue  # keep — has cost history
+        
+        title = (s.get("title") or "")
+        if not any(p.match(title) for p in DISPOSABLE):
+            continue  # not a disposable pattern
+        
+        # Check if session appears active (recently updated or has active children)
+        if _is_session_active(sid, sessions_by_id, active_pids, now_ts):
+            continue  # protect in-process sessions
+        
+        prunable.append((sid, title))
+    
+    print(f"session-prune: {len(sessions)} total, {len(prunable)} disposable (untitled/probe, idle >{GRACE_PERIOD_MINUTES}min)")
+    for sid, title in prunable[:40]:
+        print(f"  {'DELETE' if apply else 'would-prune'}: {title[:40]:40} {sid[:20]}")
+    
+    if not apply:
+        print(f"\n  DRY RUN — nothing deleted. Re-run with --apply to remove these {len(prunable)}.")
+        return 0
+    
+    ok = 0
+    for sid, _ in prunable:
+        try:
+            req = urllib.request.Request(BASE + f"/session/{sid}", method="DELETE")
+            urllib.request.urlopen(req, timeout=10)
+            ok += 1
+        except Exception as e:
+            print(f"  fail {sid[:16]}: {e}")
+    print(f"  pruned {ok}/{len(prunable)} disposable sessions.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
