@@ -1,8 +1,9 @@
 # cost-savers
 
-> `cost-savers` is the production token-reduction and cost-control layer developed for the Sovereign Raptor agent fleet.
+> Six OpenCode plugins and four CLI tools that cut what coding agents send to paid models, with a pre-registered paired A/B.
 
 Setup: `git clone --depth 1 https://github.com/SovRing-Labs/cost-savers && cd cost-savers && make test` (expect: All cost-savers tests PASSED.).
+Status: pre-alpha, under development — read STATUS.md before relying on a number.
 Licence: PolyForm Small Business 1.0.0 OR PolyForm Noncommercial 1.0.0 (free trial for evaluation).
 
 ## Docs

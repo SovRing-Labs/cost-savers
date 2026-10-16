@@ -1,5 +1,11 @@
 # cost-savers: Agent Context Optimization & Token Reduction Suite
 
+<!-- status-badges (REPO-ACCESS-C) -->
+[![status: pre-alpha (under development)](https://img.shields.io/badge/status-pre--alpha%20%28under%20development%29-orange)](STATUS.md) **Status: pre-alpha, under development** — what works today, what is untested and what failed: [`STATUS.md`](STATUS.md)
+
+[![defensive publication: DOI 10.5281/zenodo.23282133](https://img.shields.io/badge/defensive%20publication-DOI%2010.5281%2Fzenodo.23282133-blue)](https://doi.org/10.5281/zenodo.23282133) **Defensive publication:** [`TECHNICAL-DISCLOSURE.md`](TECHNICAL-DISCLOSURE.md) · DOI [10.5281/zenodo.23282133](https://doi.org/10.5281/zenodo.23282133)
+<!-- /status-badges -->
+
 **Version:** 0.1.0  
 **Licensor:** Juan Carlos De Santiago  
 **Licence:** Dual **PolyForm Small Business 1.0.0 OR PolyForm Noncommercial 1.0.0** (user's choice). See `LICENSING.md`.  
